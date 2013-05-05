@@ -32,7 +32,9 @@ describe("Pivot", function() {
   });
 
   it("should setup a multiple feature", function(done) {
-    experiments.feature("myFeature", function() {
+    experiments.feature("myFeature", function(err) {
+      if(err) return done(err);
+
       experiments.variant("myFeature", {}, function(err, variant) {
         if(err) return done(err);
 
