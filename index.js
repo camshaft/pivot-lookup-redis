@@ -34,14 +34,14 @@ module.exports = function(app, client, prefix) {
    * @param {Array} variants
    * @param {Function} done
    */
-  return function lookup(feature, variants, done){
-    debug("Looking up '"+feature+"'","with variants",variants);
+  return function lookup(feature, done){
+    debug("Looking up '"+feature.name+"'","with variants",feature.variants);
 
     // Create the key based off of the names
     var key = join(
       prefix,
       app,
-      feature.replace(/ /g, '-') // Just in case the pass some spaces
+      feature.name.replace(/ /g, '-') // Just in case the pass some spaces
     );
 
     // TODO subscribe instead of reading every time
@@ -53,33 +53,31 @@ module.exports = function(app, client, prefix) {
       if (config) {
         // Normalize the config from redis
         Object.keys(config).forEach(function(prop) {
-          config[prop] = JSON.parse(config[prop]);
+          feature[prop] = JSON.parse(config[prop]);
         });
 
         // TODO check if the variants have been changed
-        return done(null, config);
+
+        return done(null, feature);
       }
 
       // Create a multi operation
       var newFeature = client.multi();
 
-      // Setup the config
-      config = {
-        enabled: false, // Disabled by default
-        deprecated: false, // Set to true when experiment is over
-        control: JSON.stringify(variants[0]), // Default to the first variant in the list
-        target: JSON.stringify(variants[variants.length-1]) // Default to the last
-      };
-
       // Setup the groups
-      var groups = variants.map(function(variant) {
+      feature.groups = feature.variants.map(function(variant) {
         return {
           users: [], // List of users in the variant
           weight: 1, // Default to 1 - can really be anything >= 0
           value: variant
         };
       });
-      config.variants = JSON.stringify(groups);
+
+      // Escape the values for redis
+      var config = {};
+      Object.keys(feature).forEach(function(k) {
+        config[k] = JSON.stringify(feature[k]);
+      });
 
       // Store the config
       newFeature.hmset(key, config);
@@ -88,17 +86,11 @@ module.exports = function(app, client, prefix) {
       newFeature.publish(key, "new feature");
 
       // Add it to the list of app features
-      newFeature.sadd(join(prefix,app,"features"), feature);
+      newFeature.sadd(join(prefix,app,"features"), feature.name);
 
       // Exec the multi
       newFeature.exec(function(err) {
-        done(err, {
-          enabled: false,
-          deprecated: false,
-          control: variants[0],
-          target: variants[variants.length-1],
-          variants: groups
-        });
+        done(err, feature);
       });
     });
     
